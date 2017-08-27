@@ -1,0 +1,96 @@
+## Spatial Statistics: Spring 2016
+## Code to Accompany Hmwk#6
+
+#Clear memory
+rm(list=ls())
+
+##########################################################
+#Problem #1 
+##########################################################
+####################
+# part(a)
+####################
+
+library(spdep)
+library(maptools)
+
+data(columbus) #loads the columbus dataframe
+?columbus
+class(columbus)
+names(columbus)
+attach(columbus)
+
+#Polygon Shape File (.shp)
+columbus=readShapePoly(system.file("etc/shapes/columbus.shp", package="spdep"[1]))
+
+plot(columbus)
+spplot(columbus,"CRIME",main="Burglary/Thefts per Thousand Households")
+spplot(columbus,"HOVAL",main="Housing Value (in $1,000's)")
+spplot(columbus,"INC",main="Household Income (in $1,000's)")
+spplot(columbus,"OPEN",main="Open Space in Neighborhood")
+spplot(columbus,"PLUMB",main="Percentage of Housing Units without Plumbing")
+spplot(columbus,"DISCBD",main="Distance to Central Business District")
+
+####################
+# part(b)
+####################
+
+#Neighborhood Definition File (.gal)
+#This assigns a predetermined set of weights and neighbors to each region.
+col.gal.nb=read.gal(system.file("etc/weights/columbus.gal",package="spdep")[1])
+
+#Note, you can also use the poly2nb() command to define the neighborhood structure based on the polygons that share a boundary point either at least one or more than 1 boundary point with the poly2nb() function
+col.nb1=poly2nb(columbus)
+col.nb2=poly2nb(columbus,queen=FALSE)
+
+coords=coordinates(columbus)
+summary(col.gal.nb,coords)
+plot(columbus)
+plot(col.gal.nb,coords,add=TRUE,col=4)
+
+
+####################
+# part(c)
+####################
+
+#Permutation Test for Moran's I
+colw <- nb2listw(col.gal.nb, style="W")
+nsim <- 99
+set.seed(1234)
+sim1 <- moran.mc(columbus$CRIME, listw=colw, nsim=nsim)
+sim1
+
+
+####################
+# part(d)
+####################
+
+
+
+####################
+# part(e)
+####################
+n=49
+#Local Moran's I
+loc.sim=localmoran(columbus$CRIME, listw=colw)
+loc.sim
+
+
+loc.sim[,5]
+pvals=rep(1,n)
+alpha=0.01
+pvals[which(loc.sim[,5]<alpha)]=rep(0, length(which(loc.sim[,5]<alpha)))
+
+####################
+# part(f)
+####################
+
+columbus2=columbus
+columbus2@data=cbind(columbus@data,loc.sim[,5],pvals)
+spplot(columbus2,"loc.sim[, 5]",main="Local Moran's I P-Values")
+spplot(columbus2,"pvals",main="Significant Local Moran's I P-Values")
+
+
+
+
+

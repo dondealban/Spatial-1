@@ -1,0 +1,169 @@
+---
+title: "Assignment 5"
+author: "Colin Eberl-Coe"
+date: "8 March 2016"
+header-includes:
+  - \usepackage{bm}
+output: pdf_document
+---
+***
+```{r, include=FALSE}
+rm(list=ls())
+load(paste(getwd(),"/.RData",sep=""))
+list.of.packages <- c("sp", "dplyr", "stringr","spatstat","fields","gstat","lattice","ggplot2","knitr","rmarkdown")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+lapply(list.of.packages, library, character.only = TRUE)
+select <- dplyr::select
+rm(list.of.packages,new.packages)
+if(!exists("wipp",.GlobalEnv)){
+  W <- read.table(paste(getwd(),"/WIPP_transmissivity.txt",sep=""), header=TRUE, quote="\"")
+  wipp <- W %>% filter(logT != min(logT))
+  rm(W)
+}
+```
+### 1. Fit the spherical svgm w/o a nugget using `gstat` and overlay the fitted model on a plot of the empirical svgm. {.tabset} 
+```{r Spherical model on emp svgm, echo=F, fig.align='center', fig.height=4, fig.width=6}
+if(class(wipp) != "SpatialPointsDataFrame"){
+  sp::coordinates(wipp) = ~x+y
+}
+vg <- gstat::variogram(logT~1,data=wipp)
+initial <- gstat::vgm(psill=2.4,model="Sph",range=11)
+fit.vg <- gstat::fit.variogram(vg, initial, fit.method=2)
+
+# Functions to facilitate plotting
+spherical=function(t2,t3,h){
+  less.than=which(h<=t3)
+  more.than=which(h>t3)
+  gam <- rep(NA,length(h))
+  gam[less.than] <- t2*(1.5*h[less.than]/t3-0.5*(h[less.than]/t3)^3)
+  gam[more.than] <- (t2)*rep(1,length(more.than))
+  return(gam)
+}
+sph_points <- function(x){
+  spherical(t2=fit.vg$psill,t3=fit.vg$range,h=x)
+}
+# Creating dataframe to be passed in to ggplot
+df <- vg %>% select(2,3) %>% as.data.frame %>% mutate(g = sph_points(dist)) %>% rename(distance = dist, gam.hat = gamma, gam.sph = g)
+
+# Ggplot object
+gp <- ggplot(df, aes(x=distance,y=gam.hat)) + 
+  theme_classic()+
+  geom_point(size=3) + stat_function(colour="red",fun = sph_points) +
+  ggtitle(label = "Empirical Svgm with Overlaid Spherical (No Nugget) Fit") +
+  ylab(expression(hat(gamma)))
+
+# Plot the object
+gp
+
+```
+
+  * Krige at all of the observed locations. Show that kriging "honors the data". 
+```{r Kriging honors, echo=TRUE}
+k <- krige(logT~1,locations=wipp,newdata=wipp,model=fit.vg,debug.level=0)
+z <- wipp$logT
+z.hat <- k$var1.pred
+all.equal(z, z.hat)
+```
+When predicting at the observed values, kriging returns the observed values themselves; thus the actual `logT` values in the dataset and the output of `krige` are identical. This is \textsf{R}'s way of saying that $\hat{Z}(\bm{s}_i) = Z(\bm{s}_i) \ \forall i$.
+
+  * Krige at grid nodes, plotting predictions and kriging variance. 
+```{r Gridded Plots, echo=FALSE,fig.show='hold',fig.align='center', fig.height=4, fig.width=6}
+x.grid=seq(min(wipp$x),max(wipp$x),len=100)
+y.grid=seq(min(wipp$y),max(wipp$y),len=100)
+GRID=expand.grid(x.grid,y.grid,KEEP.OUT.ATTRS = F) %>% `colnames<-`(c("gx","gy"))
+coordinates(GRID) = ~gx+gy
+
+kg <- krige(logT~1,locations=wipp,newdata=GRID,model=fit.vg,debug.level=0)
+par(mfrow=c(1,2))
+quilt.plot(x=as.matrix(as.data.frame(GRID)), y = kg$var1.pred,xlab="x",ylab="y")
+title("Gridded Predictions")
+
+quilt.plot(x=as.matrix(as.data.frame(GRID)), y = kg$var1.var,xlab="x")
+title("Variability of Predictions")
+```
+    
+  * The RMSE for the transmissivity data is 
+    
+```{r RMSE, echo=FALSE}
+loocv_seq <- seq(1:40)
+cv <- function(x, sdata){
+  if(class(sdata) != "SpatialPointsDataFrame"){
+    sp::coordinates(sdata) = ~x+y
+  }
+  t <- sdata[-x,]
+  vg <- gstat::variogram(logT~1,data=t)
+  fit.vg <- gstat::fit.variogram(vg, initial, fit.method=2)
+  kcv <- krige(formula = logT~1,locations = t,newdata=sdata[x,],model=fit.vg,debug.level=0)
+  return(kcv$var1.pred)
+}
+loocv_resids <- wipp$logT - sapply(loocv_seq,FUN = cv,sdata=wipp)
+(rmse.cv <- sqrt( mean( loocv_resids^2 ) ) )
+```
+    
+  * Plot the predicted vs. observed values. Identify the worst prediction 
+    
+```{r Worst Prediction Plot, echo=FALSE}
+par(mfrow=c(1,1))
+quilt.plot(x = as.matrix(as.data.frame(wipp)), y=loocv_resids,main="Residuals of LOOCV Kriging\n With Worst Prediction Circled",xlab="x",ylab="y")
+points(wipp[which.max(loocv_resids),1],wipp[which.max(loocv_resids),2],pch=1,cex=5)
+```
+
+Observation 35 is predicted the worst, with a residual of 1.96.
+
+### 2.  Inverse Distance Weighting{.tabset} 
+  * Does IDW honor the data as Kriging does? 
+```{r Does IDW honor data?, echo=TRUE}
+invdw <- idw(logT~1,locations=wipp,newdata=wipp,idp=p,debug.level=0)
+z <- wipp$logT
+z.hat <- k$var1.pred
+all.equal(z, z.hat)
+```
+
+Again, the output of Inverse Distance Weighting prediction *is* the observed values. 
+
+  * The RMSE for the transmissivity data using Inverse Distance Weighting is  
+    
+```{r Caclulate IDW predictions, include=FALSE}
+loocv_idw_seq <- seq(1:40)
+cv.idw <- function(x, sdata,p){
+  if(class(sdata) != "SpatialPointsDataFrame"){
+    sp::coordinates(sdata) = ~x+y
+  }
+  t <- sdata[-x,]
+  vg <- gstat::variogram(logT~1,data=t)
+  fit.vg <- gstat::fit.variogram(vg, initial, fit.method=2)
+  zhat_idw <- idw(formula = logT~1,locations = t,newdata=sdata[x,],idp=p,debug.level=0)
+  return(zhat_idw$var1.pred)
+}
+loocv_idw_p1_resids <- wipp$logT - sapply(loocv_idw_seq,FUN = cv.idw,sdata=wipp,p=1)
+loocv_idw_p2_resids <- wipp$logT - sapply(loocv_idw_seq,FUN = cv.idw,sdata=wipp,p=2)
+rmse.cv.idw1 <- sqrt(mean(loocv_idw_p1_resids^2))
+rmse.cv.idw2 <- sqrt(mean(loocv_idw_p2_resids^2))
+```
+
+```{r Return IDW RMSEs, echo=FALSE}
+as.data.frame(cbind(rmse.cv.idw1, rmse.cv.idw2)) %>% rename(p1=rmse.cv.idw1, p2=rmse.cv.idw2)
+```
+ 
+
+  * Plot the predicted vs. observed values. Identify the worst prediction 
+    
+```{r Worst IDW Prediction Plot, echo=FALSE}
+par(mfrow=c(1,2))
+quilt.plot(x = as.matrix(as.data.frame(wipp)), y=loocv_idw_p1_resids,main="Residuals of IDW (p=1)\n With Worst Prediction Circled",xlab="x",ylab="y")
+points(wipp[which.max(loocv_idw_p1_resids),1],wipp[which.max(loocv_idw_p1_resids),2],pch=1,cex=5)
+
+quilt.plot(x = as.matrix(as.data.frame(wipp)), y=loocv_idw_p2_resids,main="Residuals of IDW (p=2)\n With Worst Prediction Circled",xlab="x")
+points(wipp[which.max(loocv_idw_p2_resids),1],wipp[which.max(loocv_idw_p2_resids),2],pch=1,cex=5)
+
+```
+
+As with the kriging prediction, observation 35 is predicted the worst. 
+
+  * Compare the RMSE of IDW and Kriging predictions
+```{r, echo=FALSE}
+as.data.frame(cbind(rmse.cv,rmse.cv.idw1, rmse.cv.idw2)) %>% rename(Krige = rmse.cv,IDWp1=rmse.cv.idw1, IDWp2=rmse.cv.idw2)
+```
+
+Predicting using Kriging based on the spherical model fit is better than using Inverse Distance Weighting.  

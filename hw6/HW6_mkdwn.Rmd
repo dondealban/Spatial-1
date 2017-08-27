@@ -1,0 +1,35 @@
+---
+title: "Assignment 6"
+author: "Colin Eberl-Coe"
+date: "22 March 2016"
+header-includes:
+  - \usepackage{bm}
+output: pdf_document
+---
+***
+```{r, include=FALSE}
+rm(list=ls())
+load(paste(getwd(),"/.RData",sep=""))
+list.of.packages <- c("sp", "dplyr", "stringr","spatstat","fields","gstat","lattice","ggplot2","knitr","rmarkdown")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+invisible(lapply(list.of.packages, library, character.only = TRUE))
+select <- dplyr::select
+rm(list.of.packages,new.packages)
+data(columbus)
+attach(columbus)
+colum <- readShapePoly(system.file("etc/shapes/columbus.shp", package="spdep"[1]))
+```
+### 1. Load the `columbus` data from the `spdep` package, with associated shape files. 
+
+  * Plot the variables within each neighborhood. Notice any patterns? 
+
+```{r,fig.pos="center"}
+par(mfrow=c(2,3))
+spplot(colum,"CRIME",main="Burglary/Thefts per Thousand Households")
+spplot(colum,"HOVAL",main="Housing Value (in $1,000's)")
+spplot(colum,"INC",main="Household Income (in $1,000's)")
+spplot(colum,"OPEN",main="Open Space in Neighborhood")
+spplot(colum,"PLUMB",main="Percentage of Housing Units without Plumbing")
+spplot(colum,"DISCBD",main="Distance to Central Business District")
+```

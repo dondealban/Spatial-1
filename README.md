@@ -1,3 +1,2 @@
-# MATH532
-Coursework for Spatial Statistics
-Assignment 3
+## Coursework for Spatial Statistics (MATH532)
+# Colorado School of Mines

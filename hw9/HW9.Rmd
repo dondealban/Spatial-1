@@ -1,0 +1,85 @@
+---
+title: "Assignment 9"
+author: "Colin Eberl-Coe"
+date: "12 April 2016"
+output: pdf_document
+---
+***
+```{r, include=FALSE}
+rm(list=ls())
+load(paste(getwd(),"/.RData",sep=""))
+list.of.packages <- c("sp", "dplyr", "stringr","spatstat","fields","gstat","lattice","ggplot2",
+                      "knitr","spdep","maptools")
+new.packages <- list.of.packages[!(list.of.packages %in% installed.packages()[,"Package"])]
+if(length(new.packages)) install.packages(new.packages)
+invisible(lapply(list.of.packages, library, character.only = TRUE))
+select <- dplyr::select
+rm(list.of.packages,new.packages)
+data <- read.csv(paste(getwd(),"/square.csv",sep=""),header=T)
+attach(data)
+```
+
+### A plot of the data  
+
+```{r plot the data,echo=F}
+# plot(x,y,col=rgb(0,0,0,0.35),pch=19)
+# 
+# x1=x/15
+# y1=y/15
+# plot(x1,y1,col=rgb(0,0,0,0.35),pch=19,xlab="",ylab="")
+# title("Open Empty Square",cex.main=1.5)
+
+#Creating an object of type ppp in spatstat
+win=owin(c(0,15),c(0,15))
+data=invisible(ppp(x,y,window=win))
+plot(data)
+
+detach(data)
+```
+
+The points seem to be concentrated at the center, extending in an ``X''-like pattern toward the corners. Already, the null hypothesis of complete spatial randomness looks unlikely to be true. The veractiy of the hypothesis of CSR is investigated via the $K$ and $L$ functions, then rigorously tested.
+
+### Homogeneous Summary Function Analysis
+
+The estimated $K$- and $L$-functions are displayed below. The vertical axis of the plot of the estimated $K$-function is the estimate minus $\pi r^2$ so that compliance with the null hypothesis would follow the horizontal dashed line. In both plots, the gray shaded area depicts simulation envelopes based on 50,000 simulations.  
+
+```{r K and L function analysis, echo=F}
+#kay <- envelope(Y = data, fun = Kest, nsim = 50000,funargs = list(correction="best"))
+plot(kay, . - pi * r^2 ~ r, main="Estimated K-function, nsims=50,000")
+#ell <- envelope(Y = data, fun = Lest, nsim = 50000,funargs = list(correction="best"))
+plot(ell,main="Estimated L-Function, nsims=50,000")
+```
+
+Clearly, neither summary function of the observed data corresponds to the theoretical values under the null hypothesis of complete spatial randomness. Although both $\hat{K}$ and $\hat{L}$ are within the simulation envelopes for a small range of values of $r$, for most separation distances there are many more events within that distance than would be expected under the null hypothesis, depicted by the $\hat{K}_{obs}$ and $\hat{L}_{obs}$ lines above. 
+
+```{r K and L inhom analysis, eval=FALSE, fig.height=4, fig.width=5, include=FALSE}
+#kayinhom <- envelope(Y = data,fun = Kinhom, nsim = 10000,funargs = list(sigma=bw.scott, diggle=T),funYargs = list(correction="best"))
+plot(kayinhom, main=expression(paste("Estimated ", K[inhom], "function, nsims=10,000",sep="")))
+#ellinhom <- envelope(Y = data,fun = Linhom, nsim = 10000,funargs = list(sigma=bw.scott, diggle=T),funYargs = list(correction="best"))
+plot(ellinhom, main=expression(paste("Estimated ", L[inhom], "function, nsims=10,000",sep="")))
+```
+
+### Hypothesis Tests of CSR 
+
+A formal test of $H_0$ is performed with the `spatstat::cdf.test` function. The values of the covariate at all locations in the observation window are evaluated, weighted according to the point process intensity of the fitted model, and compiled into a cumulative distribution function $F$. The probability integral transformation is then applied: if the model is correct, the results of the transform are i.i.d. uniform random variables. A goodness-of-fit test of the uniform distribution is applied to these numbers using `stats::ks.test`. The results of the tests for each spatial dimension are displayed below:
+
+```{r kstest, echo=F}
+ks.x <- cdf.test(X=data,covariate = "x")
+ks.y <- cdf.test(X=data,covariate = "y")
+plot(ks.x, main="Spatial K-S test of CSR\n based on distribution of x coordinate\n P-value=0.0007104")
+plot(ks.y,main="Spatial K-S test of CSR\n based on distribution of y coordinate\n P-value=0.002435")
+```
+
+As evidenced by the respective $P$-values and the fit of the respective ECDFs to the null distribution of a uniform random variable, there is statistically-significant evidence that the data do not exhibit complete spatial randomness. 
+
+### Nonparametric Estimate of the Intensity 
+
+Scott's bandwidth is used in the kernel density estimation of $\lambda(\vec{s})$, as well as Diggle's edge correction. The result is below: 
+
+```{r estimate lambda, echo=F,fig.height=5,fig.width=5}
+lambda.hat <- density.ppp(x = data, sigma = bw.scott,diggle = T,window=win)
+lam.hat <- density.ppp(data,bw.scott, window=win, at="points", diggle=T)
+plot(lambda.hat, main=expression(paste("Kernel Density Estimate of ", lambda(s), sep="")))
+```
+
+The estimated intensity is larger where there are more observed points and lower where there are fewer points, as expected. The highest intensity regions are, predictably, the center circle and along the diagonals.  
